@@ -1,0 +1,5 @@
+{
+  "soft_wrap": "preferred_line_length",
+  "preferred_line_length": 80,
+  "autosave": "on_focus_change"
+}

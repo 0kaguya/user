@@ -1,0 +1,21 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": ["patch.rs"],
+      },
+    },
+    "json-language-server": {
+      "settings": {
+        "json": {
+          "schemas": [
+            {
+              "fileMatch": ["*/zed/settings.json.d/*.json"],
+              "url": "zed://schemas/settings",
+            },
+          ],
+        },
+      },
+    },
+  },
+}
