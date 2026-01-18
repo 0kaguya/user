@@ -11,3 +11,7 @@
   `<filename>.d` maps to `<filename>` itself.
 
 - Files like `AGENTS.md` and `README.md` will not be merged.
+
+## Writing configs
+
+- Check updates on requirements with `git diff` on README.md.

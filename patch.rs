@@ -42,7 +42,6 @@ struct Cli {
 }
 
 use anyhow::Result;
-
 fn main() -> Result<()> {
     use clap::Parser;
     let cli = Cli::parse();
