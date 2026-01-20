@@ -1,3 +1,5 @@
 #!/bin/bash
+set -e
 
+stow --restow stowfiles
 ./patch.rs

@@ -2,7 +2,7 @@
 
 ## Developing `patch.rs`
 
-- Run cargo commands with `./devtool ...`.
+- Run cargo commands on `patch.rs` with `./dev.sh ...`.
 
 ## Description on config files' paths
 

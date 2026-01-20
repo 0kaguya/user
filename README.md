@@ -1,13 +1,21 @@
-Config file patches.
+Config file management.
 
-## Usage
+## Config house
+
+Apply stowfiles with `stow stowfiles`.
+
+## Patching
 
 Apply patches with `./patch.rs`. Requires Rust toolchain and some shell 
 utilities.
 
-Add githooks with `git config core.hooksPath .githooks` so the script runs
-automatically on pulls and commits.
+### Motivation
 
-## Motivation
+The `patch.rs` script is here as a workaround for those who doesn't have a
+built-in `config.d` approach.
 
-A workaround for those who doesn't support a built-in `config.d` approach.
+## Automatic update
+
+Add githooks with `git config core.hooksPath .githooks`. It runs both `stow`
+and `patch.rs` on commit and pull.
+
