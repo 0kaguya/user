@@ -11,6 +11,7 @@ jsonc-parser = { version = "0.29.0", features = ["serde"] }
 log = "0.4.29"
 serde_json = "1.0.149"
 simple_logger = "5.1.0"
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3.24.0"
@@ -159,8 +160,28 @@ fn start(cli: Cli) -> Result<()> {
 #[derive(Default)]
 enum Config {
     Json(serde_json::Value),
+    Toml(TomlConfig),
     Text(String),
     #[default] None,
+}
+
+struct TomlConfig {
+    value: toml::Value,
+}
+
+impl Default for TomlConfig {
+    fn default() -> Self {
+        TomlConfig {
+            value: toml::Value::Table(Default::default()),
+        }
+    }
+}
+
+impl ToString for TomlConfig {
+    fn to_string(&self) -> String {
+        toml::to_string_pretty(&self.value)
+            .expect("Serialize a toml::Value should not fail")
+    }
 }
 
 impl Config {
@@ -173,6 +194,10 @@ impl Config {
                 parse_to_serde_value(&text, &Default::default())?
                     .context(format!("Possible empty json: `{text}`"))?
             )),
+            Some("toml") => Ok(Config::Toml(TomlConfig {
+                value: toml::from_str(&text)
+                    .context(format!("Possible empty toml: `{text}`"))?,
+            })),
             Some("text") | None => Ok(Config::Text(text)),
             _ => bail!("Unsupported format: {format:?}"),
         }
@@ -185,6 +210,7 @@ impl Config {
         match (self, other?) {
             (None, other) => Ok(other),
             (Json(a), Json(b)) => Ok(Json(a.merge(b))),
+            (Toml(a), Toml(b)) => Ok(Toml(a.merge(b))),
             (Text(a), Text(b)) => Ok(Text(a.merge(b))),
             _ => bail!("Cannot merge different types"),
         }
@@ -198,6 +224,7 @@ impl From<Config> for String {
         match config {
             Json(json) => to_string_pretty(&json)
                 .expect("Serialize a serde_json::Value should not fail"),
+            Toml(toml) => toml.to_string(),
             Text(text) => text,
             None => String::new(),
         }
@@ -221,6 +248,31 @@ impl Mergeable for String {
         self.push('\n');
         self.push_str(&other);
         self
+    }
+}
+
+impl Mergeable for TomlConfig {
+    fn merge(self, other: Self) -> Self {
+        fn merge_values(a: toml::Value, b: toml::Value) -> toml::Value {
+            match (a, b) {
+                (toml::Value::Table(mut left), toml::Value::Table(right)) => {
+                    for (k, v) in right {
+                        let merged = if let Some(existing) = left.remove(&k) {
+                            merge_values(existing, v)
+                        } else {
+                            v
+                        };
+                        left.insert(k, merged);
+                    }
+                    toml::Value::Table(left)
+                }
+                (_, b) => b,
+            }
+        }
+
+        TomlConfig {
+            value: merge_values(self.value, other.value),
+        }
     }
 }
 
@@ -374,6 +426,40 @@ mod tests {
             ).unwrap();
         assert_eq!(result["foo"], 1);
         assert_eq!(result["bar"], 2);
+    }
+
+    #[test]
+    fn toml_test() {
+        use tempfile::{
+            tempdir, tempdir_in,
+        };
+        use std::io::Write;
+
+        let root = tempdir().unwrap();
+        let patch_dir = tempdir_in(root.path()).unwrap();
+        let target_dir = tempdir_in(root.path()).unwrap();
+
+        let d = patch_dir.path().join("dot-toml.toml.d");
+        std::fs::create_dir_all(&d).unwrap();
+        let mut f0 = std::fs::File::create(d.join("000.toml")).unwrap();
+        f0.write_all(b"foo = \"bar\"\n[nested]\nx = 1\n").unwrap();
+        let mut f1 = std::fs::File::create(d.join("001.toml")).unwrap();
+        f1.write_all(b"baz = \"qux\"\n[nested]\ny = 2\n").unwrap();
+
+        super::start(Cli {
+            directory: patch_dir.path().to_path_buf(),
+            target: target_dir.path().to_path_buf(),
+            log_level: log::Level::Error,
+        }).unwrap();
+
+        let result =
+            toml::from_str::<toml::Value>(
+                &std::fs::read_to_string(target_dir.path().join(".toml.toml")).unwrap()
+            ).unwrap();
+        assert_eq!(result["foo"].as_str().unwrap(), "bar");
+        assert_eq!(result["baz"].as_str().unwrap(), "qux");
+        assert_eq!(result["nested"]["x"].as_integer().unwrap(), 1);
+        assert_eq!(result["nested"]["y"].as_integer().unwrap(), 2);
     }
 
     #[test]
