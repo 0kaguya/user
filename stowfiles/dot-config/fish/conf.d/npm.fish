@@ -1,0 +1,1 @@
+set -x NPM_CONFIG_USERCONFIG "$HOME/.config/npm/config"

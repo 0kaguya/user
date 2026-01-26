@@ -10,7 +10,10 @@
         "json": {
           "schemas": [
             {
-              "fileMatch": ["*/zed/settings.json.d/*.json"],
+              "fileMatch": [
+                "*/zed/settings.json.d/*.json",
+                "*/.zed/settings.json"
+              ],
               "url": "zed://schemas/settings",
             },
           ],
@@ -18,4 +21,9 @@
       },
     },
   },
+  "file_types": {
+    "TOML": [
+      "**/stowfiles/**/*config"
+    ]
+  }
 }
