@@ -280,11 +280,69 @@ impl Mergeable for TomlConfig {
 mod tests {
     //! Test code are mostly AI-generated.
     use super::*;
+    use std::io::Write;
+    use tempfile::{tempdir, tempdir_in, Builder, TempDir};
+
+    struct TestEnv {
+        _root: TempDir,
+        patch_dir: TempDir,
+        target_dir: TempDir,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let root = tempdir().unwrap();
+            let patch_dir = tempdir_in(root.path()).unwrap();
+            let target_dir = tempdir_in(root.path()).unwrap();
+            
+            TestEnv {
+                _root: root,
+                patch_dir,
+                target_dir,
+            }
+        }
+
+        fn create_patch_dir(&self, name: &str) -> PathBuf {
+            let d = self.patch_dir.path().join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+
+        fn write_patch_file(&self, dir: &Path, prefix: &str, content: &[u8]) {
+            let temp_file = Builder::new().prefix(prefix).tempfile_in(dir).unwrap();
+            let (mut file, _) = temp_file.keep().unwrap();
+            file.write_all(content).unwrap();
+        }
+
+        fn write_named_patch_file(&self, dir: &Path, name: &str, content: &[u8]) {
+            let mut file = std::fs::File::create(dir.join(name)).unwrap();
+            file.write_all(content).unwrap();
+        }
+
+        fn run_patch(&self) {
+            super::start(Cli {
+                directory: self.patch_dir.path().to_path_buf(),
+                target: self.target_dir.path().to_path_buf(),
+                log_level: log::Level::Error,
+            }).unwrap();
+        }
+
+        fn read_target_file(&self, name: &str) -> String {
+            std::fs::read_to_string(self.target_dir.path().join(name)).unwrap()
+        }
+
+        fn read_target_json(&self, name: &str) -> serde_json::Value {
+            serde_json::from_str(&self.read_target_file(name)).unwrap()
+        }
+
+        fn read_target_toml(&self, name: &str) -> toml::Value {
+            toml::from_str(&self.read_target_file(name)).unwrap()
+        }
+    }
 
     #[test]
     fn argparse_test() {
         use std::env;
-        use tempfile::tempdir;
         use clap::Parser;
 
         let root = tempdir().unwrap();
@@ -302,94 +360,42 @@ mod tests {
 
     #[test]
     fn plain_text_test() {
-        use tempfile::{
-            tempdir, tempdir_in, Builder,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-foo.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_patch_file(&d, "000", b"hello");
+        env.write_patch_file(&d, "001", b"world");
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-foo.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut f0 = Builder::new().prefix("000").tempfile_in(&d).unwrap();
-        f0.write_all(b"hello").unwrap();
-        let mut f1 = Builder::new().prefix("001").tempfile_in(&d).unwrap();
-        f1.write_all(b"world").unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            std::fs::read_to_string(target_dir.path().join(".foo")).unwrap();
+        let result = env.read_target_file(".foo");
         assert!(result.contains("hello"));
         assert!(result.contains("world"));
     }
 
     #[test]
     fn json_test() {
-        use tempfile::{
-            tempdir, tempdir_in, Builder,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-bar.json.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_patch_file(&d, "000", br#"{"foo": "bar"}"#);
+        env.write_patch_file(&d, "001", br#"{"baz": "qux"}"#);
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-bar.json.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut f0 = Builder::new().prefix("000").tempfile_in(&d).unwrap();
-        f0.write_all(br#"{"foo": "bar"}"#).unwrap();
-        let mut f1 = Builder::new().prefix("001").tempfile_in(&d).unwrap();
-        f1.write_all(br#"{"baz": "qux"}"#).unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            serde_json::from_str::<serde_json::Value>(
-                &std::fs::read_to_string(target_dir.path().join(".bar.json")).unwrap()
-            ).unwrap();
+        let result = env.read_target_json(".bar.json");
         assert_eq!(result["foo"], "bar");
         assert_eq!(result["baz"], "qux");
     }
 
     #[test]
     fn json_merge_test() {
-        use tempfile::{
-            tempdir, tempdir_in, Builder,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-baz.json.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_patch_file(&d, "000", br#"{"a":1,"nested":{"x":1}}"#);
+        env.write_patch_file(&d, "001", br#"{"b":2,"nested":{"y":2}}"#);
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-baz.json.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut f0 = Builder::new().prefix("000").tempfile_in(&d).unwrap();
-        f0.write_all(br#"{"a":1,"nested":{"x":1}}"#).unwrap();
-        let mut f1 = Builder::new().prefix("001").tempfile_in(&d).unwrap();
-        f1.write_all(br#"{"b":2,"nested":{"y":2}}"#).unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            serde_json::from_str::<serde_json::Value>(
-                &std::fs::read_to_string(target_dir.path().join(".baz.json")).unwrap()
-            ).unwrap();
+        let result = env.read_target_json(".baz.json");
         assert_eq!(result["a"], 1);
         assert_eq!(result["b"], 2);
         assert_eq!(result["nested"]["x"], 1);
@@ -398,64 +404,28 @@ mod tests {
 
     #[test]
     fn jsonc_test() {
-        use tempfile::{
-            tempdir, tempdir_in, Builder,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-jsonc.json.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_patch_file(&d, "000", b"{\n  // line comment\n  \"foo\": 1,\n}\n");
+        env.write_patch_file(&d, "001", b"{\n  /* block comment */\n  \"bar\": 2\n}\n");
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-jsonc.json.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut f0 = Builder::new().prefix("000").tempfile_in(&d).unwrap();
-        f0.write_all(b"{\n  // line comment\n  \"foo\": 1,\n}\n").unwrap();
-        let mut f1 = Builder::new().prefix("001").tempfile_in(&d).unwrap();
-        f1.write_all(b"{\n  /* block comment */\n  \"bar\": 2\n}\n").unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            serde_json::from_str::<serde_json::Value>(
-                &std::fs::read_to_string(target_dir.path().join(".jsonc.json")).unwrap()
-            ).unwrap();
+        let result = env.read_target_json(".jsonc.json");
         assert_eq!(result["foo"], 1);
         assert_eq!(result["bar"], 2);
     }
 
     #[test]
     fn toml_test() {
-        use tempfile::{
-            tempdir, tempdir_in,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-toml.toml.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_named_patch_file(&d, "000.toml", b"foo = \"bar\"\n[nested]\nx = 1\n");
+        env.write_named_patch_file(&d, "001.toml", b"baz = \"qux\"\n[nested]\ny = 2\n");
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-toml.toml.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut f0 = std::fs::File::create(d.join("000.toml")).unwrap();
-        f0.write_all(b"foo = \"bar\"\n[nested]\nx = 1\n").unwrap();
-        let mut f1 = std::fs::File::create(d.join("001.toml")).unwrap();
-        f1.write_all(b"baz = \"qux\"\n[nested]\ny = 2\n").unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            toml::from_str::<toml::Value>(
-                &std::fs::read_to_string(target_dir.path().join(".toml.toml")).unwrap()
-            ).unwrap();
+        let result = env.read_target_toml(".toml.toml");
         assert_eq!(result["foo"].as_str().unwrap(), "bar");
         assert_eq!(result["baz"].as_str().unwrap(), "qux");
         assert_eq!(result["nested"]["x"].as_integer().unwrap(), 1);
@@ -463,34 +433,16 @@ mod tests {
     }
 
     #[test]
-    /// Test on super::IGNORE_LIST.
     fn ignore_test() {
-        use tempfile::{
-            tempdir, tempdir_in,
-        };
-        use std::io::Write;
+        let env = TestEnv::new();
+        let d = env.create_patch_dir("dot-ignore.d");
 
-        let root = tempdir().unwrap();
-        let patch_dir = tempdir_in(root.path()).unwrap();
-        let target_dir = tempdir_in(root.path()).unwrap();
+        env.write_named_patch_file(&d, "000", b"keep-this");
+        env.write_named_patch_file(&d, "AGENTS.md", b"secret");
+        env.write_named_patch_file(&d, "README.md", b"topline");
+        env.run_patch();
 
-        let d = patch_dir.path().join("dot-ignore.d");
-        std::fs::create_dir_all(&d).unwrap();
-        let mut keep = std::fs::File::create(d.join("000")).unwrap();
-        keep.write_all(b"keep-this").unwrap();
-        let mut ignored1 = std::fs::File::create(d.join("AGENTS.md")).unwrap();
-        ignored1.write_all(b"secret").unwrap();
-        let mut ignored2 = std::fs::File::create(d.join("README.md")).unwrap();
-        ignored2.write_all(b"topline").unwrap();
-
-        super::start(Cli {
-            directory: patch_dir.path().to_path_buf(),
-            target: target_dir.path().to_path_buf(),
-            log_level: log::Level::Error,
-        }).unwrap();
-
-        let result =
-            std::fs::read_to_string(target_dir.path().join(".ignore")).unwrap();
+        let result = env.read_target_file(".ignore");
         assert!(result.contains("keep-this"));
         assert!(!result.contains("secret"));
         assert!(!result.contains("topline"));
