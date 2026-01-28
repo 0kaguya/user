@@ -1,3 +1,6 @@
+[core]
+    attributesfile = ~/.gitattributes
+
 [filter "fish_indent"]
     clean = fish_indent
     smudge = cat
