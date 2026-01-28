@@ -1,5 +1,5 @@
 model_provider = "openrouter"
-model = "gpt-5"
+model = "gpt-5.2-codex"
 
 # Unfortunately this is currently buggy due to API changes.
 [model_providers.openrouter]
