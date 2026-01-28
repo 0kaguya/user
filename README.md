@@ -19,5 +19,5 @@ built-in `config.d` approach.
 Add githooks with `git config core.hooksPath .githooks`. It runs both `stow`
 and `patch.rs` on commit and pull.
 
-Add git filter for fish format by applying patches; it also sets `core.attributesfile`
-to use `~/.gitattributes` globally.
+Add git filter for fish format by applying patches and adding `*.fish filter=fish_indent`
+into `.git/info/attributes`.
