@@ -1,0 +1,3 @@
+[filter "fish"]
+    clean = fish_indent
+    smudge = cat
